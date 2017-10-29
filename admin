@@ -1,0 +1,331 @@
+package org.rmit.admin.controller;
+
+import java.math.BigInteger;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.rmit.core.controller.BaseController;
+import org.rmit.core.entity.User;
+import org.rmit.core.exception.RmitException;
+import org.rmit.core.page.Pager;
+import org.rmit.core.service.UserService;
+import org.rmit.core.util.DataUtil;
+import org.rmit.core.util.DateUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.servlet.ModelAndView;
+
+
+@Controller
+@RequestMapping("/admin")
+public class AdminController extends BaseController {
+	
+	protected final static Logger logger = LoggerFactory.getLogger(AdminController.class);
+	
+	@Autowired
+	private UserService userService;
+	
+	@RequestMapping ( "/index" )
+    public ModelAndView showIndex() throws Exception {
+       ModelAndView modelAndView = new ModelAndView();
+       modelAndView.setViewName("/WEB-INF/view/admin/home.jsp");
+       modelAndView.addObject("admin", (User)session("admin"));
+       modelAndView.addObject("adminJson", formatJsonStr((User)session("admin")));
+       return modelAndView;
+    }
+	
+	@RequestMapping ( "/account" )
+	public ModelAndView showAccount() throws Exception {
+		ModelAndView modelAndView = new ModelAndView();
+		modelAndView.setViewName("/WEB-INF/view/admin/account.jsp");
+		modelAndView.addObject("admin", (User)session("admin"));
+		modelAndView.addObject("adminJson", formatJsonStr((User)session("admin")));
+		return modelAndView;
+	}
+	
+	@RequestMapping ( "/profile" )
+	public ModelAndView showProfile() throws Exception {
+		ModelAndView modelAndView = new ModelAndView();
+		modelAndView.setViewName("/WEB-INF/view/admin/profile.jsp");
+		User user = (User)session("admin");
+		user = userService.queryUserById(user.getId());
+		modelAndView.addObject("admin",user);
+		modelAndView.addObject("adminJson", formatJsonStr(user));
+		if("0".equals(user.getType())){
+			modelAndView.addObject("typedesc","Admin");
+		}else if("1".equals(user.getType())){
+			modelAndView.addObject("typedesc","Program Coordinator");
+		}else if("2".equals(user.getType())){
+			modelAndView.addObject("typedesc","Course Coordinator");
+			
+		}
+		return modelAndView;
+	}
+	
+	@ResponseBody
+	@RequestMapping("/queryAccount")
+	public String showQueryAccount(@RequestParam(value="currentPage", defaultValue="1")int currentPage,
+			@RequestParam(value="pageSize", defaultValue="10")int pageSize,
+	String type,
+	String name
+	) throws Exception {
+		Map<String,Object> resMap = new HashMap<String,Object>();
+		Map<String,Object> param = new HashMap<String,Object>();
+		param.put("type", type);
+		param.put("name", name);
+		 Pager<User> pager = new Pager<User>();
+		 pager.setCurrentPage(currentPage);
+//		 pager.setPageSize(2);
+		 
+		 param.put("begin",pager.getBegin());
+		 param.put("pageSize",pager.getPageSize());
+		 
+		 BigInteger count = userService.queryUserCount(param);
+		 pager.setRecordTotal(count.intValue());
+		 
+		List<User> users = userService.queryUser(param);
+		if(null == users || users.size()<=0){
+			resMap.put("status", 0);
+		}
+		pager.setContent(users);
+		
+		resMap.put("status", 1);
+		resMap.put("pager", pager);
+		return render(resMap);
+	}
+	@ResponseBody
+	@RequestMapping("/queryAccountByType")
+	public String queryAccountByType(
+			String type
+			) throws Exception {
+		Map<String,Object> resMap = new HashMap<String,Object>();
+		Map<String,Object> param = new HashMap<String,Object>();
+		param.put("type", type);
+		
+		List<User> users = userService.queryUser(param);
+		if(null == users || users.size()<=0){
+			resMap.put("status", 0);
+		}
+		
+		resMap.put("status", 1);
+		resMap.put("users", users);
+		return render(resMap);
+	}
+	
+	@ResponseBody
+	@RequestMapping("/modifyUser")
+	@Transactional(rollbackFor=Exception.class)
+	public String ModifyUser(String id,
+			String imagePath,
+			String name,
+			String email,
+			String status,HttpServletRequest request) throws Exception {
+		User admin = (User) session("admin");
+		if(!"0".equals(admin.getType())){
+			throw new RmitException("0", "Insufficient permissions !");
+		}
+		
+		User user = userService.queryUserById(id);
+		if(null == user){
+			throw new RmitException("0", "User does not exist !");
+		}
+		user.setName(name);
+		user.setImagePath(imagePath);
+		user.setEmail(email);
+		user.setStatus(status);
+		user.setModifyDate(DateUtil.getCurrentDate("yyyy/MM/dd HH:mm:ss"));
+		int i = userService.updateUser(user);
+		if(i != 1){
+				return render(setMessage("0", "Operation failed !"));
+		}
+		return render(setMessage("1", "success"));
+	}
+	@ResponseBody
+	@RequestMapping("/modify")
+	@Transactional(rollbackFor=Exception.class)
+	public String updateUser(
+			String imagePath,
+			String name,
+			String email,
+			String status,HttpServletRequest request) throws Exception {
+		
+		User user = (User) session("admin");
+		user = userService.queryUserById(user.getId());
+		if(null == user){
+			throw new RmitException("0", "User does not exist !");
+		}
+		user.setName(name);
+		user.setImagePath(imagePath);
+		user.setEmail(email);
+		user.setStatus(status);
+		user.setModifyDate(DateUtil.getCurrentDate("yyyy/MM/dd HH:mm:ss"));
+		int i = userService.updateUser(user);
+		if(i != 1){
+			return render(setMessage("0", "Operation failed !"));
+		}
+		session("admin",user);
+		return render(setMessage("1", "success"));
+	}
+	
+	@ResponseBody
+	@RequestMapping("/logout")
+	public String logout() throws Exception {
+		logger.info("===>do logout");
+		removeSession("admin");
+		return render(setMessage("1", "logout success!"));
+	}
+	
+	@ResponseBody
+	@RequestMapping("/deleteUser")
+	public String deleteUser(String uid) throws Exception {
+		logger.info("===>do delete user");
+		User admin = (User) session("admin");
+		if(!"0".equals(admin.getType())){
+			throw new RmitException("0", "Insufficient permissions !");
+		}
+		User user = userService.queryUserById(uid);
+		if(null == user){
+			throw new RmitException("0", "User does not exist !");
+		}
+		user.setStatus("2");
+		user.setModifyDate(DateUtil.getCurrentDate("yyyy/MM/dd HH:mm:ss"));
+		int i = userService.updateUser(user);
+		if(i != 1){
+			return render(setMessage("0", "Operation failed !"));
+		}
+		return render(setMessage("1", "Operation success!"));
+	}
+	
+	@ResponseBody
+	@RequestMapping("/modifyPassword")
+	@Transactional(rollbackFor=Exception.class)
+	public String modifyPassword(String oldPassword,
+			String newPassword,
+			String confirmPassword) throws Exception{
+		if(DataUtil.isEmpty(oldPassword)){
+			throw new RmitException("0", "Please enter the old password!");
+		}
+		if(DataUtil.isEmpty(newPassword)){
+			throw new RmitException("0", "Please enter the new password!");
+		}
+		if(DataUtil.isEmpty(confirmPassword)){
+			throw new RmitException("0", "Two passwords are inconsistent !");
+		}
+		
+		User user = (User) session("admin");
+		
+		user = userService.queryUserById(user.getId());
+		if(!oldPassword.equals(user.getPassword())){
+			throw new RmitException("0", "The old password is incorrect !");
+		}
+		user.setPassword(newPassword);
+		user.setModifyDate(DateUtil.getCurrentDate("yyyy/MM/dd HH:mm:ss"));
+		int i = userService.updateUser(user);
+		if(i != 1){
+			return render(setMessage("0", "operation failed!"));
+		}
+		session("admin",user);
+		return render(setMessage("1", "operation success!"));
+	}
+	
+	@ResponseBody
+	@RequestMapping("/modifyUserPassword")
+	@Transactional(rollbackFor=Exception.class)
+	public String modifyUserPassword(
+			String newPassword,
+			String uid,
+			String confirmPassword) throws Exception{
+		User admin = (User) session("admin");
+		if(!"0".equals(admin.getType())){
+			throw new RmitException("0", "Insufficient permissions !");
+		}
+		
+		if(DataUtil.isEmpty(newPassword)){
+			throw new RmitException("0", "Please enter the new password!");
+		}
+		if(DataUtil.isEmpty(confirmPassword)){
+			throw new RmitException("0", "Two passwords are inconsistent !");
+		}
+		
+		
+		User user = userService.queryUserById(uid);
+		user.setPassword(newPassword);
+		user.setModifyDate(DateUtil.getCurrentDate("yyyy/MM/dd HH:mm:ss"));
+		int i = userService.updateUser(user);
+		if(i != 1){
+			return render(setMessage("0", "operation failed!"));
+		}
+		return render(setMessage("1", "operation success!"));
+	}
+	
+	@ResponseBody
+	@RequestMapping("/createUser")
+	@Transactional(rollbackFor=Exception.class)
+	public String createUer(
+			String type,
+			String username,
+			String password,
+			String email) throws Exception{
+		User admin = (User) session("admin");
+		if(!"0".equals(admin.getType())){
+			throw new RmitException("0", "Insufficient permissions !");
+		}
+		
+		if(DataUtil.isEmpty(username)){
+			throw new RmitException("0", "The username can not be empty!");
+		}
+		if(DataUtil.isEmpty(password)){
+			throw new RmitException("0", "The password can not be empty !");
+		}
+		if(DataUtil.isEmpty(email)){
+			throw new RmitException("0", "The Email can not be empty !");
+		}
+		
+		Map<String,Object> param = new HashMap<String,Object>();
+		param.put("name", username);
+		List<User> users = userService.queryUser(param);
+		if(null != users && users.size()>0){
+			throw new RmitException("0", "The username is already exists !");
+		}
+		
+		param = new HashMap<String,Object>();
+		users = null;
+		param.put("email", email);
+		users = userService.queryUser(param);
+		if(null != users && users.size()>0){
+			throw new RmitException("0", "The email is already exists !");
+		}
+		
+		User user = new User();
+		user.setName(username);
+		user.setType(type);
+		user.setEmail(email);
+		user.setPassword(password);
+		user.setStatus("1");//activated
+		user.setCreateDate(DateUtil.getCurrentDate("yyyy/MM/dd HH:mm:ss"));
+		
+		int i = userService.saveUser(user);
+		logger.info(i+""+user.getId());
+		if(i!=1){
+			throw new RmitException("0", "Create user failed");
+		}
+		
+		user.setIdNo(buildIdNo(user));
+		i = userService.updateUser(user);
+		if(i != 1){
+			throw new RmitException("0", "Create user failed");
+		}
+		
+		return render(setMessage("1", "operation success!"));
+	}
+	
+}
